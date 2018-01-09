@@ -1,0 +1,302 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Rotato Potato</title>
+    <script src="pixi.min.js"></script>
+    <script src="jquery-3.2.1.min.js"></script>
+    <script src="input.js"></script>
+    <script src="stationary.js"></script>
+    <script src="rotatable.js"></script>
+    <script src="movable.js"></script>
+    <script src="levelManager.js"></script>
+    <script src="cracked.js"></script>
+    <script src="turret.js"></script>
+    <script src="bullet.js"></script>
+    <script src="bump.js"></script>
+    <style type = "text/css">
+        canvas{
+            margin:auto;
+            display:block;
+        }
+        a {
+            visibility: hidden;
+        }
+ 
+    </style>
+</head>
+<body>
+    <script type="text/javascript">
+        //Aliases
+        let Application = PIXI.Application,
+            loader = PIXI.loader,
+            resources = PIXI.loader.resources,
+            Sprite = PIXI.Sprite;
+        
+        
+        //BEGIN LOADING
+        /******************************************/
+        let app = new Application({ 
+            width: 800,         // default: 800
+            height: 600,        // default: 600
+            antialias: true,    // default: false
+            transparent: false, // default: false
+            resolution: 1       // default: 1
+          }
+        );
+        
+        app.stage.interactive = true;
+
+        app.renderer.autoResize = true;
+        document.body.appendChild(app.view);
+        
+        loader.add("resources/potato.png")
+        .add("resources/platform.png")
+        .add("resources/bg.png")
+        .add("resources/bubble.png")
+        .add("resources/stationary.png")
+        .add("resources/meter.png")
+        .add("resources/door.png")
+        .add("resources/arrow.png")
+        .add("resources/turret.png")
+        .add("resources/bullet.png")
+        .add("resources/cracked.png")
+        .add("resources/tut1.png")
+        .add("resources/tut2.png")
+        .add("resources/tut3.png")
+        .add("resources/tut4.png")
+        .add("levels.json")
+        .load(setup);
+        
+        let levelNames = ['tutorial1', 'tutorial2', 'tutorial3', 'cove', 'fall', 'tall', 'gap', 'win'];
+        let tut2;
+        let currentLevel = 0;
+        let b = new Bump(PIXI);
+        let potato;
+        let bg;
+        let door;
+        let freeze = false;
+        let moved = false;
+        let bubble;
+        let arrow;
+        let tick = 0;
+        let tickMax = 30;
+        let bar;
+        let rClock = false;
+        let rCounter = false;
+        let rotatableSprites = [];
+        let stationarySprites = [];
+        let turretSprites = [];
+        let debugging = false;
+        let bubbleD = 20;
+        let bubbleR = 200;
+        let maxmeter = 100;
+        let meter = 100;
+        let usedRot = false;
+        //runs after loading images
+        function setup()
+        {
+            potato = new Movable(resources["resources/potato.png"].texture, 500, 346, 30, 30);
+            door = new Stationary(resources["resources/door.png"].texture, 0, 0, 24, 36);
+            bg = new PIXI.extras.TilingSprite(resources["resources/bg.png"].texture, 800, 600);
+            bubble = new Rotatable(resources["resources/bubble.png"].texture, 0, 0, 0, 0);
+            bar = new Sprite(resources["resources/meter.png"].texture);
+            arrow = new Rotatable(resources["resources/arrow.png"].texture, 0, 0, 0, 0);
+            arrow.anchor.y = 1.0;
+            bar.width = 20;
+            bar.x = 10;
+            bar.y = 30;
+            bar.rotation = 3 * Math.PI/2;
+            door.door = true;
+            
+            bubble.visible = false;
+            bubble.width = bubbleR;
+            bubble.height = bubbleR;
+            
+            arrow.visible = false;
+            
+            loadLevel(levelNames[currentLevel]);
+            
+            //keyboard
+            defkeys(); //defines the keys usable and binds their event functions
+    
+            app.stage.on('pointerdown', onClick);
+            app.stage.on('pointerup', onRelease);
+            app.stage.on('pointermove', onMove);
+            app.ticker.add(delta => gameLoop(delta)); //begin game logic
+        }
+        
+        function onClick()
+        {
+            if(meter >= 100)
+            {
+                meter -= 100;
+                freeze = true;
+                bubble.visible = true;
+                arrow.visible = true;
+
+                bubble.x = app.renderer.plugins.interaction.mouse.global.x;
+                bubble.y = app.renderer.plugins.interaction.mouse.global.y;
+                for(let i in rotatableSprites){
+                    rotatableSprites[i].bubblex = rotatableSprites[i].x;
+                    rotatableSprites[i].bubbley = rotatableSprites[i].y;
+                    rotatableSprites[i].bubbleangle = rotatableSprites[i].rotation;
+                    rotatableSprites[i].bubblevx = rotatableSprites[i].vx;
+                    rotatableSprites[i].bubblevy = rotatableSprites[i].vy;
+                }
+            }
+        }        
+        
+        function onRelease()
+        {
+            moved = false;
+            bubble.visible = false;
+            arrow.visible = false;
+            freeze = false;
+            for(let i in rotatableSprites){
+                if(Math.sqrt(Math.pow(rotatableSprites[i].x - bubble.x, 2) + Math.pow(rotatableSprites[i].y - bubble.y, 2)) <= bubble.width / 2)
+                {
+                    let diff = rotatableSprites[i].bubbleangle-rotatableSprites[i].rotation;
+                    rotatableSprites[i].vx = Math.cos(-diff) * (rotatableSprites[i].bubblevx) - Math.sin(-diff) * (rotatableSprites[i].bubblevy);
+                    rotatableSprites[i].vy = Math.sin(-diff) * (rotatableSprites[i].bubblevx) + Math.cos(-diff) * (rotatableSprites[i].bubblevy);
+                }
+            }
+        }
+        
+        function onMove()
+        {
+            if(debugging){
+                bubble.x = app.renderer.plugins.interaction.mouse.global.x;
+                bubble.y = app.renderer.plugins.interaction.mouse.global.y;
+                for(let i in rotatableSprites){
+                    if(freeze && Math.sqrt(Math.pow(rotatableSprites[i].x - bubble.x, 2) + Math.pow(rotatableSprites[i].y - bubble.y, 2)) <= bubble.width / 2){  
+                        rotatableSprites[i].x = bubble.x;
+                        rotatableSprites[i].bubblex = bubble.x;
+                        rotatableSprites[i].y = bubble.y;
+                        rotatableSprites[i].bubbley = bubble.y;
+                    }
+                }
+            }
+        }
+        function reset(){
+            clearScreen();
+            loadLevel(levelNames[currentLevel]);
+        }
+        function goNext()
+        {
+            currentLevel++;
+            reset();  
+        }
+        
+        function gameLoop(delta)
+        {
+            if(potato.x > 250) tut2.visible = true;
+            /*let platcoords = [];
+            for(let i in rotatableSprites)
+            {
+                platcoords.push([rotatableSprites[i].x, rotatableSprites[i].y, rotatableSprites[i].rotation]);
+            }
+            let leveldesign = "[";
+            for(let i in platcoords)
+            {
+                leveldesign += ("[" + platcoords[i][0] + ", " + platcoords[i][1] + ", " + platcoords[i][2] + "], ");
+            }*/
+            //console.log(leveldesign);
+
+            console.log(rotatableSprites);
+            // console.log(stationarySprites);
+            //console.log("ax: " + potato.ax + " ay: " + potato.ay + "\nvx: " + potato.vx + " vy: " + potato.vy + "\nx: " + potato.x + " y: " + potato.y);
+            //Call this `gameLoop` function on the next screen refresh
+            //(which happens 60 times per second)
+            // requestAnimationFrame(gameLoop);
+        
+            // if(potato.vy < 20) potato.vy += 1;
+            bar.height = meter * 3;
+            if(!freeze){
+                if(tick < tickMax) tick++;
+                if(tick >= tickMax)
+                {
+                    console.log("SPAWN");
+                    for(let i in turretSprites)
+                    {
+                        console.log("spawning");
+                        let bullet = new Bullet(resources["resources/bullet.png"].texture, turretSprites[i].x, turretSprites[i].y, 20, 20, turretSprites[i].rotation);
+                        app.stage.addChild(bullet);
+                        rotatableSprites.push(bullet);
+                    }
+                    tick = 0;
+                }
+                //charge meter
+                if(potato.collide)
+                {
+                    if(meter < maxmeter){
+                        meter += 2;
+                    }
+                }                
+                //gravity
+                potato.ay = 1;
+                if(potato.collide){
+                    potato.vx *= 0.8;
+                }else{
+                    potato.vx *= 0.97;
+                }
+                //move movable sprites
+                for(let i in rotatableSprites){
+                    let sprite = rotatableSprites[i];
+                    console.log(sprite.x);
+                    console.log(sprite.y);
+                    let xlimit = 3;
+                    let ylimit = 20;
+
+                    if(sprite.vy < ylimit &&  sprite.ay > 0) sprite.vy += sprite.ay;
+                    if(sprite.vy > -ylimit && sprite.ay < 0) sprite.vy += sprite.ay;
+                    if(sprite.vx < xlimit && sprite.ax > 0) sprite.vx += sprite.ax;
+                    if(sprite.vx > -xlimit && sprite.ax < 0) sprite.vx += sprite.ax;
+                    let oldvy = sprite.vy;
+                    sprite.tryMove(rotatableSprites.concat(stationarySprites));
+                    if(sprite.vy < oldvy-0.01){
+                        sprite.midair = false;
+                    }
+                }
+            }else{
+                arrow.visible = true;
+                arrow.x = potato.x;
+                arrow.y = potato.y;
+                arrow.height = Math.sqrt(Math.pow(potato.vx, 2) + Math.pow(potato.vy, 2)) * 6;
+                arrow.width = arrow.height / 1.6;
+                //do the vx/vy update but only for potato
+                if(Math.sqrt(Math.pow(potato.x - bubble.x, 2) + Math.pow(potato.y - bubble.y, 2)) <= bubble.width / 2)
+                {
+                    let diff = potato.bubbleangle-potato.rotation;
+                    potato.vx = Math.cos(-diff) * (potato.bubblevx) - Math.sin(-diff) * (potato.bubblevy);
+                    potato.vy = Math.sin(-diff) * (potato.bubblevx) + Math.cos(-diff) * (potato.bubblevy);
+                }
+                arrow.rotation = Math.atan2(potato.vy,potato.vx)+Math.PI/2;
+                if(!arrow.rotation){
+                    arrow.rotation = 0;
+                }
+                for(let i in rotatableSprites)
+                {
+                    //checks if rotatable is in radius of bubble
+                    if(Math.sqrt(Math.pow(rotatableSprites[i].x - bubble.x, 2) + Math.pow(rotatableSprites[i].y - bubble.y, 2)) <= bubble.width / 2)
+                    {
+                        let angleRadians = 0.1;
+                        if(rClock)
+                        {
+                            rotatableSprites[i].rotation += angleRadians;
+                        }
+                        if(rCounter)
+                        {
+                            rotatableSprites[i].rotation -= angleRadians;
+                        }
+                        let diff = rotatableSprites[i].bubbleangle-rotatableSprites[i].rotation;
+                        rotatableSprites[i].x = Math.cos(-diff) * (rotatableSprites[i].bubblex - bubble.x) - Math.sin(-diff) * (rotatableSprites[i].bubbley - bubble.y) + bubble.x;
+                        rotatableSprites[i].y = Math.sin(-diff) * (rotatableSprites[i].bubblex - bubble.x) + Math.cos(-diff) * (rotatableSprites[i].bubbley - bubble.y) + bubble.y;
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
