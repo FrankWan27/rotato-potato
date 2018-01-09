@@ -1,6 +1,7 @@
 # Rotato Potato
 
 This is a 2D puzzle platformer where the player uses rotation to solve puzzles
+
 The game can be played at http://rotatopotato.cf
 
 ## Built With
